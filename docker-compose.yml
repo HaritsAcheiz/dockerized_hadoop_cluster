@@ -1,0 +1,53 @@
+version: '3'
+
+services:
+  namenode:
+    build: .
+    container_name: namenode
+    hostname: namenode
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+      - "8088:8088"
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    environment:
+      - CLUSTER_NAME=test
+    env_file:
+      - ./hadoop-hive.env
+    networks:
+      - hadoop_network
+
+  datanode1:
+    build: .
+    container_name: datanode1
+    hostname: datanode1
+    volumes:
+      - hadoop_datanode1:/hadoop/dfs/data
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870"
+    env_file:
+      - ./hadoop-hive.env
+    networks:
+      - hadoop_network
+
+  datanode2:
+    build: .
+    container_name: datanode2
+    hostname: datanode2
+    volumes:
+      - hadoop_datanode2:/hadoop/dfs/data
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870"
+    env_file:
+      - ./hadoop-hive.env
+    networks:
+      - hadoop_network
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode1:
+  hadoop_datanode2:
+
+networks:
+  hadoop_network:
