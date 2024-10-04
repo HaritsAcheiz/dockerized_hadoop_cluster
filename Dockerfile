@@ -3,7 +3,7 @@ FROM ubuntu:24.04
 # Set environment variables
 ENV HADOOP_VERSION=3.3.6
 ENV SPARK_VERSION=3.5.3
-ENV HIVE_VERSION=4.0.0
+ENV HIVE_VERSION=4.0.1
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
@@ -22,7 +22,8 @@ RUN useradd -ms /bin/bash hadoopuser && \
     adduser hadoopuser sudo
 
 # Set up SSH
-RUN ssh-keygen -t rsa -P '' -f /home/hadoopuser/.ssh/id_rsa && \
+RUN mkdir -p /home/hadoopuser/.ssh && \
+    ssh-keygen -t rsa -P '' -f /home/hadoopuser/.ssh/id_rsa && \
     cat /home/hadoopuser/.ssh/id_rsa.pub >> /home/hadoopuser/.ssh/authorized_keys && \
     chmod 0600 /home/hadoopuser/.ssh/authorized_keys && \
     chown -R hadoopuser:hadoopuser /home/hadoopuser/.ssh
@@ -45,6 +46,9 @@ RUN wget https://dlcdn.apache.org/hive/hive-${HIVE_VERSION}/apache-hive-${HIVE_V
     && mv apache-hive-${HIVE_VERSION}-bin /opt/hive \
     && rm apache-hive-${HIVE_VERSION}-bin.tar.gz
 
+# Set ownership after all installations
+RUN chown -R hadoopuser:hadoopuser /opt/hadoop /opt/spark /opt/hive
+
 # Set environment variables
 ENV HADOOP_HOME=/opt/hadoop
 ENV SPARK_HOME=/opt/spark
@@ -54,12 +58,9 @@ ENV PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$SPARK_HOME/bin:$HIVE_HOME/bin
 # Copy configuration files
 COPY config/* $HADOOP_HOME/etc/hadoop/
 
-# Set up SSH
+# Create data directories
 RUN mkdir -p /hadoop/dfs/name /hadoop/dfs/data && \
     chown -R hadoopuser:hadoopuser /hadoop
-
-# Switch back to root for final commands
-USER root
 
 # Create bootstrap.sh
 RUN echo '#!/bin/bash\n\

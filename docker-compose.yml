@@ -15,8 +15,6 @@ services:
       - CLUSTER_NAME=test
     env_file:
       - ./hadoop-hive.env
-    networks:
-      - hadoop_network
 
   datanode1:
     build: .
@@ -28,8 +26,6 @@ services:
       SERVICE_PRECONDITION: "namenode:9870"
     env_file:
       - ./hadoop-hive.env
-    networks:
-      - hadoop_network
 
   datanode2:
     build: .
@@ -41,8 +37,6 @@ services:
       SERVICE_PRECONDITION: "namenode:9870"
     env_file:
       - ./hadoop-hive.env
-    networks:
-      - hadoop_network
 
 volumes:
   hadoop_namenode:
@@ -50,4 +44,5 @@ volumes:
   hadoop_datanode2:
 
 networks:
-  hadoop_network:
+  default:
+    name: hadoop_network
