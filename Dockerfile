@@ -1,86 +1,66 @@
-FROM ubuntu:24.04
+FROM ubuntu:20.04
 
-# Set environment variables
 ENV HADOOP_VERSION=3.3.6
 ENV SPARK_VERSION=3.5.3
-ENV HIVE_VERSION=4.0.1
-
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    openjdk-8-jdk \
-    wget \
-    ssh \
-    pdsh \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set JAVA_HOME
+ENV HADOOP_HOME=/opt/hadoop
 ENV JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
 
-# Create hadoopuser and set up SSH
-RUN useradd -ms /bin/bash hadoopuser && \
-    echo "hadoopuser:hadoopuser" | chpasswd && \
-    adduser hadoopuser sudo
+# Set DEBIAN_FRONTEND to noninteractive to avoid prompts during installation
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Set up SSH
-RUN mkdir -p /home/hadoopuser/.ssh && \
-    ssh-keygen -t rsa -P '' -f /home/hadoopuser/.ssh/id_rsa && \
-    cat /home/hadoopuser/.ssh/id_rsa.pub >> /home/hadoopuser/.ssh/authorized_keys && \
-    chmod 0600 /home/hadoopuser/.ssh/authorized_keys && \
-    chown -R hadoopuser:hadoopuser /home/hadoopuser/.ssh
+# Install sudo first
+RUN apt-get update && apt-get install -y sudo
 
-# Download and install Hadoop
-RUN wget https://dlcdn.apache.org/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz \
-    && tar -xzf hadoop-${HADOOP_VERSION}.tar.gz \
-    && mv hadoop-${HADOOP_VERSION} /opt/hadoop \
-    && rm hadoop-${HADOOP_VERSION}.tar.gz
+# Create hdfs and yarn users and set home directories
+RUN useradd -m -d /home/hdfs hdfs && \
+    useradd -m -d /home/yarn yarn && \
+    useradd -m -d /home/developer developer && \
+    echo "developer ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
-# Download and install Spark
-RUN wget https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz \
-    && tar -xzf spark-${SPARK_VERSION}-bin-hadoop3.tgz \
-    && mv spark-${SPARK_VERSION}-bin-hadoop3 /opt/spark \
-    && rm spark-${SPARK_VERSION}-bin-hadoop3.tgz
+USER developer
+WORKDIR /home/developer
 
-# Download and install Hive
-RUN wget https://dlcdn.apache.org/hive/hive-${HIVE_VERSION}/apache-hive-${HIVE_VERSION}-bin.tar.gz \
-    && tar -xzf apache-hive-${HIVE_VERSION}-bin.tar.gz \
-    && mv apache-hive-${HIVE_VERSION}-bin /opt/hive \
-    && rm apache-hive-${HIVE_VERSION}-bin.tar.gz
+# install ssh and pdsh
+RUN sudo apt-get update && \
+    sudo apt-get install -y ssh
 
-# Set ownership after all installations
-RUN chown -R hadoopuser:hadoopuser /opt/hadoop /opt/spark /opt/hive
+# Add environment variable to .bashrc
+RUN echo 'export PDSH_RCMD_TYPE=ssh' >> ~/.bashrc
 
-# Set environment variables
-ENV HADOOP_HOME=/opt/hadoop
-ENV SPARK_HOME=/opt/spark
-ENV HIVE_HOME=/opt/hive
-ENV PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$SPARK_HOME/bin:$HIVE_HOME/bin
+# Generate SSH key and configure SSH
+RUN ssh-keygen -t rsa -P '' -f ~/.ssh/id_rsa && \
+    cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys && \
+    chmod 0600 ~/.ssh/authorized_keys
 
-# Copy configuration files
-COPY config/* $HADOOP_HOME/etc/hadoop/
+# install jdk
+RUN sudo apt-get install -y openjdk-8-jdk
 
-# Create data directories
-RUN mkdir -p /hadoop/dfs/name /hadoop/dfs/data && \
-    chown -R hadoopuser:hadoopuser /hadoop
+# install hadoop
+RUN wget https://dlcdn.apache.org/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz && \
+    tar -xzf hadoop-${HADOOP_VERSION}.tar.gz && \
+    sudo mv hadoop-${HADOOP_VERSION} /opt/hadoop
 
-# Create bootstrap.sh
-RUN echo '#!/bin/bash\n\
-service ssh start\n\
-export HDFS_NAMENODE_USER=hadoopuser\n\
-export HDFS_DATANODE_USER=hadoopuser\n\
-export HDFS_SECONDARYNAMENODE_USER=hadoopuser\n\
-export YARN_RESOURCEMANAGER_USER=hadoopuser\n\
-export YARN_NODEMANAGER_USER=hadoopuser\n\
-\n\
-if [ "$HOSTNAME" = "namenode" ]; then\n\
-    su - hadoopuser -c "$HADOOP_HOME/bin/hdfs namenode -format -force"\n\
-    su - hadoopuser -c "$HADOOP_HOME/sbin/start-dfs.sh"\n\
-    su - hadoopuser -c "$HADOOP_HOME/sbin/start-yarn.sh"\n\
-elif [[ "$HOSTNAME" == "datanode"* ]]; then\n\
-    su - hadoopuser -c "$HADOOP_HOME/sbin/hadoop-daemon.sh start datanode"\n\
-    su - hadoopuser -c "$HADOOP_HOME/sbin/yarn-daemon.sh start nodemanager"\n\
-fi\n\
-\n\
-tail -f /dev/null' > /bootstrap.sh \
-    && chmod +x /bootstrap.sh
+# Set Java environment in hadoop-env.sh
+RUN sed -i 's|export JAVA_HOME=.*|export JAVA_HOME=${JAVA_HOME}/|' $HADOOP_HOME/etc/hadoop/hadoop-env.sh
 
-CMD ["/bootstrap.sh"]
+# Add PATH and JAVA_HOME to /etc/environment
+RUN echo 'PATH=$PATH:$JAVA_HOME/bin:$HADOOP_HOME/bin:$HADOOP_HOME/sbin' >> /etc/environment && \
+    echo 'JAVA_HOME=${JAVA_HOME}' >> /etc/environment
+
+# Change Permission and group of user hdfs
+RUN sudo usermod -aG hadoopuser hdfs && \
+    sudo chown hdfs:root -R /opt/hadoop/ && \
+    sudo chmod g+rwx -R /opt/hadoop/ && \
+    sudo adduser hdfs sudo
+
+USER hdfs
+
+# Generate SSH key for user hdfs
+RUN ssh-keygen -t rsa -N "" -f /home/hdfs/.ssh/id_rsa && \
+    cat /home/hdfs/.ssh/id_rsa.pub >> /home/hdfs/.ssh/authorized_keys
+
+# Set permissions for the .ssh directory
+RUN chmod 700 /home/hdfs/.ssh && \
+    chmod 600 /home/hdfs/.ssh/authorized_keys
+
+CMD ["tail", "-f", "/dev/null"]
