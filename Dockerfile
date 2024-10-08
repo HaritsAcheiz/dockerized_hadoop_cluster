@@ -5,9 +5,6 @@ ENV SPARK_VERSION=3.5.3
 ENV HADOOP_HOME=/opt/hadoop
 ENV JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
 
-# Set DEBIAN_FRONTEND to noninteractive to avoid prompts during installation
-ENV DEBIAN_FRONTEND=noninteractive
-
 # Install sudo first
 RUN apt-get update && apt-get install -y sudo
 
