@@ -2,72 +2,71 @@ version: '3'
 
 services:
   namenode:
-    image: hadoop-spark-base:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: namenode
     hostname: namenode
-    ports:
-      - "9870:9870"  # Hadoop NameNode web UI
-      - "8088:8088"  # YARN ResourceManager web UI
-      - "7077:7077"  # Spark Master port
-      - "8080:8080"  # Spark Master web UI
-      - "2222:22"    # SSH
-    volumes:
-      - ./hadoop_namenode:/hadoop/dfs/name
-      - ./hadoop_config:/opt/hadoop_config
-      - ./spark_config:/opt/spark_config
-    environment:
-      - NODE_TYPE=namenode
-      - HDFS_NAMENODE_USER=hdfs
-      - YARN_RESOURCEMANAGER_USER=yarn
-      - YARN_NODEMANAGER_USER=yarn
     networks:
-      hadoop_network:
-        aliases:
-          - namenode
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9870" ]
-      interval: 30s
-      timeout: 10s
-      retries: 5
+      hdfs_network:
+        ipv4_address: 172.20.0.2
+    ports:
+      - "9870:9870"  # HDFS Web UI
+      - "9000:9000"  # HDFS
+      - "8088:8088"  # YARN Resource Manager Web UI
+      - "8032:8032"  # YARN Resource Manager
+    environment:
+      - CLUSTER_NAME=hadoop-cluster
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    command: ["namenode"]
 
   datanode1:
-    image: hadoop-spark-base:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: datanode1
     hostname: datanode1
-    volumes:
-      - ./hadoop_datanode1:/hadoop/dfs/data
-      - ./hadoop_config:/opt/hadoop_config
-      - ./spark_config:/opt/spark_config
-    environment:
-      - NODE_TYPE=datanode
-      - HDFS_DATANODE_USER=hdfs
     networks:
-      hadoop_network:
-        aliases:
-          - datanode1
+      hdfs_network:
+        ipv4_address: 172.20.0.3
+    ports:
+      - "8042:8042"  # YARN NodeManager Web UI
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+    volumes:
+      - hadoop_datanode1:/hadoop/dfs/data
     depends_on:
-      namenode:
-        condition: service_healthy
+      - namenode
+    command: ["datanode"]
 
   datanode2:
-    image: hadoop-spark-base:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: datanode2
     hostname: datanode2
-    volumes:
-      - ./hadoop_datanode2:/hadoop/dfs/data
-      - ./hadoop_config:/opt/hadoop_config
-      - ./spark_config:/opt/spark_config
-    environment:
-      - NODE_TYPE=datanode
-      - HDFS_DATANODE_USER=hdfs
     networks:
-      hadoop_network:
-        aliases:
-          - datanode2
+      hdfs_network:
+        ipv4_address: 172.20.0.4
+    ports:
+      - "8043:8042"  # YARN NodeManager Web UI (different host port to avoid conflicts)
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+    volumes:
+      - hadoop_datanode2:/hadoop/dfs/data
     depends_on:
-      namenode:
-        condition: service_healthy
+      - namenode
+    command: ["datanode"]
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode1:
+  hadoop_datanode2:
 
 networks:
-  hadoop_network:
-    name: hadoop_network
+  hdfs_network:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
